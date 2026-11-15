@@ -140,18 +140,161 @@ ${g?'':fld('nd','Next dose date',inp('nd','date','','min="'+add(T(),1)+'"'))}
 ${fld('rb','Referred by (optional)',inp('rb','text',g?.ref,'list="rl" placeholder="e.g. Community health worker"')+'<datalist id="rl"><option value="Community health worker"><option value="Traditional birth attendant"><option value="Religious leader"><option value="Another mother"><option value="Walk-in"></datalist>')}
 <label class="f"><input type="checkbox" id="cs" ${g?.consent?'checked':''}> Mother agrees to receive automated calls about her baby</label><small class="er" id="e-cs"></small>
 <button class="bt w" onclick="saveReg(${g?g.id:0})">${g?'Save changes':'Enrol mother'}</button></div>`}
-function saveReg(eid){const v=i=>($('#'+i)?.value||'').trim();let ok=true;document.querySelectorAll('.er').forEach(e=>e.textContent='');
-const er=(i,m)=>{$('#e-'+i).textContent=m;ok=false};
-if(!/^(0|\+234)[789]\d{9}$/.test(v('ph').replace(/\s/g,'')))er('ph','Enter a valid Nigerian number, e.g. 0803 445 2211');
-if(!$('#cs').checked)er('cs','Consent is needed to send automated calls');
-if(!eid){if(!v('dg'))er('dg','Choose the dose given today');const a=v('age'),w=v('au')==='weeks';if(a===''||+a<0||+a>(w?104:59))er('age',w?'Enter 0–104 weeks':'Enter 0–59 months');
-if(!v('nd'))er('nd','Pick the next dose date');else if(v('nd')<=T())er('nd','Next dose must be after today')}
-if(!ok)return toast('Please fix the highlighted fields');
-if(eid){const g=cgOf(eid);Object.assign(g,{ph:v('ph'),fac:+v('fac'),ref:v('rb'),lang:v('lg')});S.ch.filter(c=>c.cg===eid).forEach(c=>c.fac=g.fac);save();toast('Enrolment updated');return go('caregivers')}
-const f=+v('fac'),g={id:nid(),name:'Mother …'+v('ph').replace(/\s/g,'').slice(-4),ph:v('ph'),lang:v('lg'),time:'—',reg:T(),consent:true,fac:f,sec:'',ref:v('rb')},c={id:nid(),cg:g.id,ref:'Baby LL-'+(1001+S.ch.length),dob:add(T(),-Math.round(+v('age')*(v('au')==='weeks'?7:30.4))),sex:'—',fac:f,rec:'',dose:v('dg')};
-S.cg.push(g);S.ch.push(c);
-const d1={id:nid(),ch:c.id,visit:'Dose given',vac:v('dg')+' dose',date:T(),st:'attended',rep:'yes',ver:true},d2={id:nid(),ch:c.id,visit:'Next dose',vac:'Next dose due',date:v('nd'),st:'scheduled',rep:null,ver:false};
-S.ap.push(d1,d2);schedCalls(d1);save();toast('Enrolled. Calls set for 24h and 72h after the dose (simulated).');go(S.sess.role==='h'?'register':'child',c.id)}
+async function saveReg(eid) {
+    const v = i => ($('#' + i)?.value || '').trim();
+    let ok = true;
+
+    document.querySelectorAll('.er').forEach(e => e.textContent = '');
+
+    const er = (i, m) => {
+        $('#e-' + i).textContent = m;
+        ok = false;
+    };
+
+    if (!/^(0|\+234)[789]\d{9}$/.test(v('ph').replace(/\s/g, ''))) {
+        er('ph', 'Enter a valid Nigerian number, e.g. 0803 445 2211');
+    }
+
+    if (!$('#cs').checked) {
+        er('cs', 'Consent is needed to send automated calls');
+    }
+
+    if (!eid) {
+        if (!v('dg')) er('dg', 'Choose the dose given today');
+
+        const a = v('age');
+        const w = v('au') === 'weeks';
+
+        if (a === '' || +a < 0 || +a > (w ? 104 : 59)) {
+            er('age', w ? 'Enter 0–104 weeks' : 'Enter 0–59 months');
+        }
+
+        if (!v('nd')) {
+            er('nd', 'Pick the next dose date');
+        } else if (v('nd') <= T()) {
+            er('nd', 'Next dose must be after today');
+        }
+    }
+
+    if (!ok) return toast('Please fix the highlighted fields');
+
+    // Editing an existing registration
+    if (eid) {
+        const g = cgOf(eid);
+
+        Object.assign(g, {
+            ph: v('ph'),
+            fac: +v('fac'),
+            ref: v('rb'),
+            lang: v('lg')
+        });
+
+        S.ch.filter(c => c.cg === eid).forEach(c => c.fac = g.fac);
+
+        save();
+        toast('Enrolment updated');
+        return go('caregivers');
+    }
+
+    // Save the new registration to the backend first
+    try {
+        const response = await fetch(
+            'https://lafiya-line-voice.onrender.com/register',
+            {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    phone: v('ph'),
+                    language: v('lg'),
+                    referredBy: v('rb'),
+                    age: Number(v('age')),
+                    ageUnit: v('au'),
+                    dose: v('dg'),
+                    nextDoseDate: v('nd')
+                })
+            }
+        );
+
+        const result = await response.json();
+
+        if (!response.ok || !result.success) {
+            throw new Error(result.message || 'Registration failed');
+        }
+
+        console.log('Supabase registration successful:', result);
+
+        // Only update the local demo data after backend success
+        const f = +v('fac');
+
+        const g = {
+            id: nid(),
+            name: 'Mother …' + v('ph').replace(/\s/g, '').slice(-4),
+            ph: v('ph'),
+            lang: v('lg'),
+            time: '—',
+            reg: T(),
+            consent: true,
+            fac: f,
+            sec: '',
+            ref: v('rb')
+        };
+
+        const c = {
+            id: nid(),
+            cg: g.id,
+            ref: result.child?.child_name || 'Baby LL-' + (1001 + S.ch.length),
+            dob: add(
+                T(),
+                -Math.round(
+                    Number(v('age')) *
+                    (v('au') === 'weeks' ? 7 : 30.4)
+                )
+            ),
+            sex: '—',
+            fac: f,
+            rec: '',
+            dose: v('dg')
+        };
+
+        S.cg.push(g);
+        S.ch.push(c);
+
+        const d1 = {
+            id: nid(),
+            ch: c.id,
+            visit: 'Dose given',
+            vac: v('dg') + ' dose',
+            date: T(),
+            st: 'attended',
+            rep: 'yes',
+            ver: true
+        };
+
+        const d2 = {
+            id: nid(),
+            ch: c.id,
+            visit: 'Next dose',
+            vac: 'Next dose due',
+            date: v('nd'),
+            st: 'scheduled',
+            rep: null,
+            ver: false
+        };
+
+        S.ap.push(d1, d2);
+        schedCalls(d1);
+        save();
+
+        toast('Registration saved to Supabase successfully!');
+        go(S.sess.role === 'h' ? 'register' : 'child', c.id);
+
+    } catch (error) {
+        console.error('Registration failed:', error);
+        toast('Database error: ' + error.message);
+    }
+}
 /* children */
 function pChildren(){return H('Child Profiles','All registered children')+'<div class="c"><div class="bar"><input id="q" placeholder="Search child or caregiver…" oninput="flt()"></div>'+tbl(['Child','Age','Mother','Facility','Next dose','Verified completion',''],S.ch.map(c=>{const g=cgOf(c.cg),n=S.ap.filter(a=>a.ch===c.id&&a.st==='scheduled').sort((a,b)=>a.date<b.date?-1:1)[0];return `<tr data-t="${E((c.ref+g.name).toLowerCase())}"><td>${E(c.ref)}</td><td>${fmt(c.dob)}</td><td>${E(g.name)}</td><td>${E(fn(c.fac))}</td><td>${n?n.visit+' · '+fmt(n.date):'—'}</td><td>${comp(c.id)}%</td><td><button class="bt g sm" onclick="go('child',${c.id})">Open</button></td></tr>`}).join(''))+'</div>'}
 function pChild(){const c=chOf(cur);if(!c)return pChildren();const g=cgOf(c.cg),a=S.ap.filter(x=>x.ch===c.id).sort((x,y)=>x.date<y.date?-1:1),nx=a.find(x=>x.st==='scheduled'),cl=S.calls.filter(x=>a.some(y=>y.id===x.ap));
