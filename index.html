@@ -186,10 +186,80 @@ let gl='',au=null;
 const by=t=>{if(!t)return '';const[h,m]=t.split(':').map(Number);return String((h+2)%24).padStart(2,'0')+':'+String(m).padStart(2,'0')};
 const gateHtml=()=>`<span class="m" style="width:100%">Language gate: she presses</span>`+[['Hausa',1],['Kanuri',2],['English',3]].map(([l,k])=>`<button type="button" class="pp ${gl===l?'on':''}" onclick="setGl('${l}')">${k} · ${l}</button>`).join('')+`<button type="button" class="pp ${gl?'':'on'}" onclick="setGl('')">No press (6s)</button>`;
 function setGl(l){gl=l;hr()}
-function play(){const c=S.calls.find(x=>x.id===+($('#sa')?.value));if(!c)return toast('Pick a call first');
-const ch=chOf(apOf(c.ap).ch),L=gl||cgOf(ch.cg).lang,l=L==='English'?'en':'ha',q=c.type===1?['call1_'+l]:['call2_'+l,(TAIL[ch.dose]||'bcg')+'_'+l];
-if(au){au.pause();au=null}
-const nx=()=>{const n=q.shift(),p=$('#ps');if(!n){p.textContent='Finished.';return}au=new Audio('audio/'+n+'.mp3');p.textContent='Playing '+n+'.mp3'+(L==='Kanuri'?' (no Kanuri recording yet, playing Hausa)':'');au.onended=nx;au.onerror=()=>{nx()};au.play().catch(()=>{})};nx()}
+function play(){
+ const c=S.calls.find(x=>x.id===+($('#sa')?.value));
+ if(!c)return toast('Pick a call first');
+
+ const ch=chOf(apOf(c.ap).ch);
+ const L=gl||cgOf(ch.cg).lang;
+ const lang={English:'en',Hausa:'ha',Kanuri:'kan'}[L]||'ha';
+ const tail=TAIL[ch.dose]||'bcg';
+
+ const files={
+  call1_en:'call1_en.mp3',
+  call1_ha:'call1_ha.mp3',
+  call1_kan:'call1_kan.m4a',
+
+  call2_en:'call2_en.mp3',
+  call2_ha:'call2_ha.mp3',
+  call2_kan:'call2_kan.m4a',
+
+  rota_en:'rota_en.aac',
+  rota_kan:'rota_kan.m4a',
+
+  m9_en:'m9_en.aac',
+  m9_ha:'m9_ha.aac',
+  m9_kan:'m9_kan.m4a',
+
+  bcg_en:'bcg_en.mp3',
+  bcg_ha:'bcg_ha.mp3'
+ };
+
+ const keys=c.type===1
+  ?['call1_'+lang]
+  :['call2_'+lang,tail+'_'+lang];
+
+ if(au){au.pause();au=null}
+
+ const next=()=>{
+  const key=keys.shift();
+  const p=$('#ps');
+
+  if(!key){
+   p.textContent='Finished.';
+   return;
+  }
+
+  let file=files[key];
+
+  if(!file&&lang==='ha'&&key.startsWith('rota_')){
+   file=files.rota_en;
+  }
+
+  if(!file&&key.startsWith('bcg_')){
+   file=files.bcg_ha;
+  }
+
+  if(!file){
+   p.textContent='Recording unavailable: '+key;
+   return;
+  }
+
+  au=new Audio('audio/'+file);
+  p.textContent='Playing '+file;
+
+  au.onended=next;
+  au.onerror=()=>{
+   p.textContent='Could not play '+file;
+  };
+
+  au.play().catch(()=>{
+   p.textContent='Playback failed: '+file;
+  });
+ };
+
+ next();
+}
 const heardHtml=c=>{if(!c)return '';const ch=chOf(apOf(c.ap).ch);return `<b>What she hears · ${E(gl||cgOf(ch.cg).lang)}${(gl||cgOf(ch.cg).lang)==='Kanuri'?' (no Kanuri recording yet, plays Hausa)':''} · dose given: ${E(ch.dose||'')}</b><br>${E(heard(c))}`};
 function hr(){const c=S.calls.find(x=>x.id===+$('#sa').value);$('#gp').innerHTML=gateHtml();$('#hd').innerHTML=heardHtml(c)}
 function sim(){const c=S.calls.find(x=>x.id===+($('#sa')?.value)),o=$('#so').value;if(!c)return toast('No pending calls. Enrol a mother first.');if(!can('sim'))return toast('Not permitted');
